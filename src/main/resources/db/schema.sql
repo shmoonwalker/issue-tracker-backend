@@ -9,7 +9,7 @@ CREATE TABLE users (
 );
 CREATE TABLE projects (
     id bigserial primary key ,
-    name varchar(255) not null,CHECK (char_length(name) >= 3)
+    name varchar(255) not null CHECK (char_length(name) >= 3)
 );
 CREATE TABLE tickets (
     id bigserial primary key ,
@@ -21,7 +21,7 @@ CREATE TABLE tickets (
     update_date TIMESTAMP,
     CONSTRAINT fk_ticket_project
         FOREIGN KEY (project_id)
-            REFERENCES project(id)
+            REFERENCES projects(id)
 
 );
 
@@ -37,15 +37,15 @@ CREATE TABLE user_ticket (
             ON DELETE CASCADE,
     CONSTRAINT fk_user_ticket_ticket
         FOREIGN KEY (ticket_id)
-            REFERENCES ticket(id)
+            REFERENCES tickets(id)
             ON DELETE CASCADE
     );
 
 CREATE INDEX idx_tickets_status
-    ON ticket(status);
+    ON tickets(status);
 
 CREATE INDEX idx_tickets_project_id
-    ON ticket(project_id);
+    ON tickets(project_id);
 
 CREATE INDEX idx_user_ticket_user_id
     ON user_ticket(user_id);
