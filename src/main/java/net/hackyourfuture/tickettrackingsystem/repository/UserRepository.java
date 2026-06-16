@@ -67,25 +67,19 @@ public class UserRepository {
         return new User(id, user.name(), user.email());
     }
 
-    public Optional<User> update(User user) {
+    public void update(User user) {
         String sql = """
-                UPDATE users
-                SET name = ?, email = ?
-                WHERE id = ?
-                """;
+            UPDATE users
+            SET name = ?, email = ?
+            WHERE id = ?
+            """;
 
-        int rowsAffected = jdbcTemplate.update(
+        jdbcTemplate.update(
                 sql,
                 user.name(),
                 user.email(),
                 user.id()
         );
-
-        if (rowsAffected == 0) {
-            return Optional.empty();
-        }
-
-        return Optional.of(user);
     }
 
     public boolean deleteById(Long id) {
