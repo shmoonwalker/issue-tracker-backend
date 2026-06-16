@@ -1,17 +1,17 @@
 CREATE TYPE ticket_status AS ENUM (
-    'OPEN', 'IN PROGRESS', 'CLOSED');
+    'OPEN', 'IN_PROGRESS', 'CLOSED');
 
-CREATE TABLE "user" (
+CREATE TABLE users (
     id bigserial primary key ,
     name varchar(255) not null CHECK (char_length(name) >= 3),
     email varchar(255) not null unique
 
 );
-CREATE TABLE project (
+CREATE TABLE projects (
     id bigserial primary key ,
     name varchar(255) not null,CHECK (char_length(name) >= 3)
 );
-CREATE TABLE ticket (
+CREATE TABLE tickets (
     id bigserial primary key ,
     title varchar(255) not null,
     description varchar(255) ,
@@ -33,7 +33,7 @@ CREATE TABLE user_ticket (
 
     CONSTRAINT fk_user_ticket_user
         FOREIGN KEY (user_id)
-            REFERENCES "user"(id)
+            REFERENCES users(id)
             ON DELETE CASCADE,
     CONSTRAINT fk_user_ticket_ticket
         FOREIGN KEY (ticket_id)
