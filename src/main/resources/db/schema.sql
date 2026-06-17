@@ -49,3 +49,6 @@ CREATE INDEX idx_tickets_project_id
 
 CREATE INDEX idx_user_ticket_user_id
     ON user_ticket(user_id);
+
+CREATE INDEX idx_user_ticket_ticket_id
+    ON user_ticket(ticket_id);

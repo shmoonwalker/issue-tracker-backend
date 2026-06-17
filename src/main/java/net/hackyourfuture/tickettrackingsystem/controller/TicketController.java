@@ -4,7 +4,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import net.hackyourfuture.tickettrackingsystem.dto.request.CreateTicketRequest;
 import net.hackyourfuture.tickettrackingsystem.dto.request.UpdateTicketRequest;
+import net.hackyourfuture.tickettrackingsystem.dto.response.EmailNotificationResponse;
 import net.hackyourfuture.tickettrackingsystem.dto.response.TicketResponse;
+import net.hackyourfuture.tickettrackingsystem.dto.response.TicketUpdateResponse;
 import net.hackyourfuture.tickettrackingsystem.service.TicketService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,8 +31,11 @@ public class TicketController {
     }
 
     @GetMapping
-    public List<TicketResponse> getAllTickets() {
-        return ticketService.getAllTickets();
+    public List<TicketResponse> getAllTickets(
+            @RequestParam(required = false) String text,
+            @RequestParam(required = false) String status
+    ) {
+        return ticketService.getAllTickets(text, status);
     }
 
     @GetMapping("/{id}")
@@ -39,37 +44,34 @@ public class TicketController {
     }
 
     @PutMapping("/{id}")
-    public TicketResponse updateTicket(
+    public TicketUpdateResponse updateTicket(
             @PathVariable Long id,
             @Valid @RequestBody UpdateTicketRequest request
     ) {
         return ticketService.updateTicket(id, request);
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteTicket(@PathVariable Long id) {
-        ticketService.deleteTicket(id);
 
-        return ResponseEntity.noContent().build();
-    }
 
     @PostMapping("/{ticketId}/assignees/{userId}")
-    public ResponseEntity<Void> assignUserToTicket(
+    public ResponseEntity<EmailNotificationResponse> assignUserToTicket(
             @PathVariable Long ticketId,
             @PathVariable Long userId
     ) {
-        ticketService.assignUserToTicket(ticketId, userId);
+        EmailNotificationResponse response =
+                ticketService.assignUserToTicket(ticketId, userId);
 
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/{ticketId}/assignees/{userId}")
-    public ResponseEntity<Void> unassignUserFromTicket(
+    public ResponseEntity<EmailNotificationResponse> unassignUserFromTicket(
             @PathVariable Long ticketId,
             @PathVariable Long userId
     ) {
-        ticketService.unassignUserFromTicket(ticketId, userId);
+        EmailNotificationResponse response =
+                ticketService.unassignUserFromTicket(ticketId, userId);
 
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(response);
     }
 }

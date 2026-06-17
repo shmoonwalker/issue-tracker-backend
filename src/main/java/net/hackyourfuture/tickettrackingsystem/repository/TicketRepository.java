@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,15 +48,48 @@ public class TicketRepository {
         );
     }
 
-    public List<Ticket> findAll() {
-        String sql = """
-                SELECT id, title, description, project_id, status, creation_date, update_date
-                FROM tickets
-                ORDER BY creation_date DESC
-                """;
+    public List<Ticket> findAll(String text, String status) {
+        StringBuilder sql = new StringBuilder("""
+            SELECT id, title, description, project_id, status, creation_date, update_date
+            FROM tickets
+            WHERE 1 = 1
+            """);
 
-        return jdbcTemplate.query(sql, ticketRowMapper);
+        List<Object> params = new ArrayList<>();
+
+        String cleanedText = text == null ? null : text.trim();
+        String cleanedStatus = status == null ? null : status.trim();
+
+        if (cleanedText != null && !cleanedText.isBlank()) {
+            sql.append("""
+                AND (
+                    LOWER(title) LIKE LOWER(?)
+                    OR LOWER(COALESCE(description, '')) LIKE LOWER(?)
+                )
+                """);
+
+            String searchText = "%" + cleanedText + "%";
+            params.add(searchText);
+            params.add(searchText);
+        }
+
+        if (cleanedStatus != null && !cleanedStatus.isBlank()) {
+            sql.append("""
+        AND status = ?::ticket_status
+        """);
+
+            params.add(cleanedStatus.toUpperCase());
+        }
+
+        sql.append(" ORDER BY id");
+
+        return jdbcTemplate.query(
+                sql.toString(),
+                ticketRowMapper,
+                params.toArray()
+        );
     }
+
 
     public Optional<Ticket> findById(Long id) {
         String sql = """
@@ -95,13 +129,7 @@ public class TicketRepository {
         );
     }
 
-    public boolean deleteById(Long id) {
-        String sql = "DELETE FROM tickets WHERE id = ?";
 
-        int rowsAffected = jdbcTemplate.update(sql, id);
-
-        return rowsAffected > 0;
-    }
 
     public void assignUser(Long ticketId, Long userId) {
         String sql = """
@@ -151,5 +179,20 @@ public class TicketRepository {
                 """;
 
         return jdbcTemplate.queryForList(sql, Long.class, ticketId);
+    }
+
+    public List<String> findAssigneeEmailsByTicketId(Long ticketId) {
+        String sql = """
+            SELECT u.email
+            FROM users u
+            JOIN user_ticket ut ON ut.user_id = u.id
+            WHERE ut.ticket_id = ?
+            """;
+
+        return jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> rs.getString("email"),
+                ticketId
+        );
     }
 }
