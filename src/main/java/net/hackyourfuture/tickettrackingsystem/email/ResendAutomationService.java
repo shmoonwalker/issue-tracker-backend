@@ -3,6 +3,7 @@ package net.hackyourfuture.tickettrackingsystem.email;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -10,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Map;
 
 @Service
@@ -20,16 +22,25 @@ public class ResendAutomationService {
 
     private static final String RESEND_EMAIL_URL = "https://api.resend.com/emails";
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient;
+    private final ObjectMapper objectMapper;
+    private final String apiKey;
+    private final String fromEmail;
 
-    @Value("${resend.api-key}")
-    private String apiKey;
+    public ResendAutomationService(
+            HttpClient resendHttpClient,
+            ObjectMapper objectMapper,
+            @Value("${resend.api-key}") String apiKey,
+            @Value("${resend.from-email}") String fromEmail
+    ) {
+        this.httpClient = resendHttpClient;
+        this.objectMapper = objectMapper;
+        this.apiKey = apiKey;
+        this.fromEmail = fromEmail;
+    }
 
-    @Value("${resend.from-email}")
-    private String fromEmail;
-
-    public EmailSendResult sendTicketUpdatedEmail(
+    @Async
+    public void sendTicketUpdatedEmail(
             String assigneeEmail,
             Long ticketId,
             String ticketTitle,
@@ -68,6 +79,7 @@ public class ResendAutomationService {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(RESEND_EMAIL_URL))
+                    .timeout(Duration.ofSeconds(10))
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
@@ -79,38 +91,19 @@ public class ResendAutomationService {
             );
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String message = "Resend failed with status "
-                        + response.statusCode()
-                        + ". Body: "
-                        + response.body();
-
-                logger.warn("Email sending failed for {}. {}", assigneeEmail, message);
-
-                return new EmailSendResult(
+                logger.warn(
+                        "Email sending failed for {}. Resend returned status {}. Body: {}",
                         assigneeEmail,
-                        false,
-                        message
+                        response.statusCode(),
+                        response.body()
                 );
+                return;
             }
 
             logger.info("Email sent successfully to {}", assigneeEmail);
 
-            return new EmailSendResult(
-                    assigneeEmail,
-                    true,
-                    "Email sent successfully"
-            );
-
         } catch (Exception exception) {
-            String message = "Could not send email: " + exception.getMessage();
-
             logger.error("Email sending crashed for {}", assigneeEmail, exception);
-
-            return new EmailSendResult(
-                    assigneeEmail,
-                    false,
-                    message
-            );
         }
     }
 

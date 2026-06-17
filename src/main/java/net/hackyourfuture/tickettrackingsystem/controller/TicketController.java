@@ -4,9 +4,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import net.hackyourfuture.tickettrackingsystem.dto.request.CreateTicketRequest;
 import net.hackyourfuture.tickettrackingsystem.dto.request.UpdateTicketRequest;
-import net.hackyourfuture.tickettrackingsystem.dto.response.EmailNotificationResponse;
 import net.hackyourfuture.tickettrackingsystem.dto.response.TicketResponse;
 import net.hackyourfuture.tickettrackingsystem.dto.response.TicketUpdateResponse;
+import net.hackyourfuture.tickettrackingsystem.model.TicketStatus;
 import net.hackyourfuture.tickettrackingsystem.service.TicketService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +16,7 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/tickets")
+@RequestMapping("/api/v1/tickets")
 public class TicketController {
 
     private final TicketService ticketService;
@@ -33,7 +33,7 @@ public class TicketController {
     @GetMapping
     public List<TicketResponse> getAllTickets(
             @RequestParam(required = false) String text,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) TicketStatus status
     ) {
         return ticketService.getAllTickets(text, status);
     }
@@ -54,22 +54,22 @@ public class TicketController {
 
 
     @PostMapping("/{ticketId}/assignees/{userId}")
-    public ResponseEntity<EmailNotificationResponse> assignUserToTicket(
+    public ResponseEntity<TicketResponse> assignUserToTicket(
             @PathVariable Long ticketId,
             @PathVariable Long userId
     ) {
-        EmailNotificationResponse response =
+        TicketResponse response =
                 ticketService.assignUserToTicket(ticketId, userId);
 
         return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/{ticketId}/assignees/{userId}")
-    public ResponseEntity<EmailNotificationResponse> unassignUserFromTicket(
+    public ResponseEntity<TicketResponse> unassignUserFromTicket(
             @PathVariable Long ticketId,
             @PathVariable Long userId
     ) {
-        EmailNotificationResponse response =
+        TicketResponse response =
                 ticketService.unassignUserFromTicket(ticketId, userId);
 
         return ResponseEntity.ok(response);

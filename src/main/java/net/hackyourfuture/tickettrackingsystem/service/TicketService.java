@@ -3,31 +3,35 @@ package net.hackyourfuture.tickettrackingsystem.service;
 import lombok.RequiredArgsConstructor;
 import net.hackyourfuture.tickettrackingsystem.dto.request.CreateTicketRequest;
 import net.hackyourfuture.tickettrackingsystem.dto.request.UpdateTicketRequest;
-import net.hackyourfuture.tickettrackingsystem.dto.response.EmailNotificationResponse;
 import net.hackyourfuture.tickettrackingsystem.dto.response.TicketResponse;
 import net.hackyourfuture.tickettrackingsystem.dto.response.TicketUpdateResponse;
-import net.hackyourfuture.tickettrackingsystem.email.EmailSendResult;
 import net.hackyourfuture.tickettrackingsystem.email.ResendAutomationService;
 import net.hackyourfuture.tickettrackingsystem.exception.ResourceNotFoundException;
 import net.hackyourfuture.tickettrackingsystem.model.Ticket;
+import net.hackyourfuture.tickettrackingsystem.model.TicketStatus;
 import net.hackyourfuture.tickettrackingsystem.model.User;
 import net.hackyourfuture.tickettrackingsystem.repository.ProjectRepository;
 import net.hackyourfuture.tickettrackingsystem.repository.TicketRepository;
 import net.hackyourfuture.tickettrackingsystem.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
 public class TicketService {
 
+    private static final String SYSTEM_ACTOR = "System";
+
     private final TicketRepository ticketRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final ResendAutomationService resendAutomationService;
 
+    @Transactional
     public TicketResponse createTicket(CreateTicketRequest request) {
         if (!projectRepository.existsById(request.projectId())) {
             throw new ResourceNotFoundException(
@@ -50,13 +54,27 @@ public class TicketService {
         return toTicketResponse(createdTicket);
     }
 
-    public List<TicketResponse> getAllTickets(String text, String status) {
-        return ticketRepository.findAll(text, status)
-                .stream()
-                .map(this::toTicketResponse)
+    @Transactional(readOnly = true)
+    public List<TicketResponse> getAllTickets(String text, TicketStatus status) {
+        List<Ticket> tickets = ticketRepository.findAll(text, status);
+
+        if (tickets.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> ticketIds = tickets.stream().map(Ticket::id).toList();
+        Map<Long, List<Long>> assigneesByTicket =
+                ticketRepository.findAssignedUserIdsByTicketIds(ticketIds);
+
+        return tickets.stream()
+                .map(ticket -> toTicketResponse(
+                        ticket,
+                        assigneesByTicket.getOrDefault(ticket.id(), List.of())
+                ))
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public TicketResponse getTicketById(Long id) {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() ->
@@ -68,6 +86,7 @@ public class TicketService {
         return toTicketResponse(ticket);
     }
 
+    @Transactional
     public TicketUpdateResponse updateTicket(Long id, UpdateTicketRequest request) {
         Ticket existingTicket = ticketRepository.findById(id)
                 .orElseThrow(() ->
@@ -94,16 +113,18 @@ public class TicketService {
 
         Ticket savedTicket = ticketRepository.update(updatedTicket);
 
-        List<EmailNotificationResponse> emailNotifications =
-                sendTicketUpdateEmails(existingTicket, savedTicket);
+        boolean emailNotificationsDispatched =
+                dispatchUpdateEmails(existingTicket, savedTicket);
 
         return new TicketUpdateResponse(
                 toTicketResponse(savedTicket),
-                emailNotifications
+                emailNotificationsDispatched
+
         );
     }
 
-    public EmailNotificationResponse assignUserToTicket(Long ticketId, Long userId) {
+    @Transactional
+    public TicketResponse assignUserToTicket(Long ticketId, Long userId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
@@ -118,23 +139,28 @@ public class TicketService {
                         )
                 );
 
-        if (ticketRepository.assignmentExists(ticketId, userId)) {
+        boolean inserted = ticketRepository.assignUser(ticketId, userId);
+
+        if (!inserted) {
             throw new IllegalArgumentException(
                     "User " + userId + " is already assigned to ticket " + ticketId
             );
         }
 
-        ticketRepository.assignUser(ticketId, userId);
-
-        return sendSingleTicketEmail(
+        resendAutomationService.sendTicketUpdatedEmail(
                 user.email(),
-                ticket,
-                "System",
+                ticket.id(),
+                ticket.title(),
+                String.valueOf(ticket.status()),
+                SYSTEM_ACTOR,
                 "You have been assigned to this ticket."
         );
+
+        return toTicketResponse(ticket);
     }
 
-    public EmailNotificationResponse unassignUserFromTicket(Long ticketId, Long userId) {
+    @Transactional
+    public TicketResponse unassignUserFromTicket(Long ticketId, Long userId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
@@ -157,60 +183,40 @@ public class TicketService {
             );
         }
 
-        return sendSingleTicketEmail(
+        resendAutomationService.sendTicketUpdatedEmail(
                 user.email(),
-                ticket,
-                "System",
+                ticket.id(),
+                ticket.title(),
+                String.valueOf(ticket.status()),
+                SYSTEM_ACTOR,
                 "You have been removed from this ticket."
         );
+
+        return toTicketResponse(ticket);
     }
 
-
-    private List<EmailNotificationResponse> sendTicketUpdateEmails(
-            Ticket existingTicket,
-            Ticket savedTicket
-    ) {
+    private boolean dispatchUpdateEmails(Ticket existingTicket, Ticket savedTicket) {
         List<String> assigneeEmails =
                 ticketRepository.findAssigneeEmailsByTicketId(savedTicket.id());
 
         if (assigneeEmails.isEmpty()) {
-            return List.of();
+            return false;
         }
 
         String changes = buildChanges(existingTicket, savedTicket);
 
-        return assigneeEmails.stream()
-                .map(assigneeEmail ->
-                        sendSingleTicketEmail(
-                                assigneeEmail,
-                                savedTicket,
-                                "System",
-                                changes
-                        )
-                )
-                .toList();
-    }
+        for (String email : assigneeEmails) {
+            resendAutomationService.sendTicketUpdatedEmail(
+                    email,
+                    savedTicket.id(),
+                    savedTicket.title(),
+                    String.valueOf(savedTicket.status()),
+                    SYSTEM_ACTOR,
+                    changes
+            );
+        }
 
-    private EmailNotificationResponse sendSingleTicketEmail(
-            String assigneeEmail,
-            Ticket ticket,
-            String updatedBy,
-            String changes
-    ) {
-        EmailSendResult result = resendAutomationService.sendTicketUpdatedEmail(
-                assigneeEmail,
-                ticket.id(),
-                ticket.title(),
-                String.valueOf(ticket.status()),
-                updatedBy,
-                changes
-        );
-
-        return new EmailNotificationResponse(
-                result.recipientEmail(),
-                result.sent(),
-                result.message()
-        );
+        return true;
     }
 
     private String buildChanges(Ticket oldTicket, Ticket newTicket) {
@@ -252,13 +258,20 @@ public class TicketService {
     }
 
     private TicketResponse toTicketResponse(Ticket ticket) {
+        return toTicketResponse(
+                ticket,
+                ticketRepository.findAssignedUserIds(ticket.id())
+        );
+    }
+
+    private TicketResponse toTicketResponse(Ticket ticket, List<Long> assignedUserIds) {
         return new TicketResponse(
                 ticket.id(),
                 ticket.title(),
                 ticket.description(),
                 ticket.projectId(),
                 ticket.status(),
-                ticketRepository.findAssignedUserIds(ticket.id()),
+                assignedUserIds,
                 ticket.creationDate(),
                 ticket.updateDate()
         );

@@ -1,8 +1,6 @@
 package net.hackyourfuture.tickettrackingsystem.controller;
 
-import net.hackyourfuture.tickettrackingsystem.email.EmailSendResult;
 import net.hackyourfuture.tickettrackingsystem.email.ResendAutomationService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -14,8 +12,6 @@ import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.hasSize;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -41,27 +37,9 @@ class TicketControllerIntegrationTest {
     @MockitoBean
     private ResendAutomationService resendAutomationService;
 
-    @BeforeEach
-    void setUp() {
-        when(resendAutomationService.sendTicketUpdatedEmail(
-                anyString(),
-                anyLong(),
-                anyString(),
-                anyString(),
-                anyString(),
-                anyString()
-        )).thenAnswer(invocation ->
-                new EmailSendResult(
-                        invocation.getArgument(0),
-                        true,
-                        "Email sent successfully"
-                )
-        );
-    }
-
     @Test
     void getAllTickets_withoutFilters_returnsAllTickets() throws Exception {
-        mockMvc.perform(get("/tickets"))
+        mockMvc.perform(get("/api/v1/tickets"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2)))
                 .andExpect(jsonPath("$[0].title").value("Bug login"))
@@ -70,36 +48,49 @@ class TicketControllerIntegrationTest {
 
     @Test
     void getAllTickets_withTextAndStatus_usesAndLogic() throws Exception {
-        mockMvc.perform(get("/tickets")
+        mockMvc.perform(get("/api/v1/tickets")
                         .param("text", "bug")
-                        .param("status", "OPEN"))
+                        .param("status", "open"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].title").value("Bug login"))
-                .andExpect(jsonPath("$[0].status").value("OPEN"));
+                .andExpect(jsonPath("$[0].status").value("open"));
     }
 
     @Test
-    void updateTicket_returnsTicketAndEmailNotificationResult() throws Exception {
+    void getAllTickets_withInvalidStatus_returnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/tickets")
+                        .param("status", "not-a-real-status"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void getAllTickets_withWildcardInText_treatsItAsLiteral() throws Exception {
+        mockMvc.perform(get("/api/v1/tickets")
+                        .param("text", "%"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void updateTicket_returnsTicketAndEmailDispatchedFlag() throws Exception {
         String requestBody = """
                 {
                   "title": "Bug login updated",
                   "description": "Login button is still broken",
                   "projectId": 1,
-                  "status": "IN_PROGRESS"
+                  "status": "in progress"
                 }
                 """;
 
-        mockMvc.perform(put("/tickets/1")
+        mockMvc.perform(put("/api/v1/tickets/1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ticket.id").value(1))
                 .andExpect(jsonPath("$.ticket.title").value("Bug login updated"))
-                .andExpect(jsonPath("$.ticket.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.emailNotifications", hasSize(1)))
-                .andExpect(jsonPath("$.emailNotifications[0].recipientEmail").value("alice@example.com"))
-                .andExpect(jsonPath("$.emailNotifications[0].sent").value(true))
-                .andExpect(jsonPath("$.emailNotifications[0].message").value("Email sent successfully"));
+                .andExpect(jsonPath("$.ticket.status").value("in progress"))
+                .andExpect(jsonPath("$.emailNotificationsDispatched").value(true));
     }
 }

@@ -9,8 +9,12 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -48,7 +52,7 @@ public class TicketRepository {
         );
     }
 
-    public List<Ticket> findAll(String text, String status) {
+    public List<Ticket> findAll(String text, TicketStatus status) {
         StringBuilder sql = new StringBuilder("""
             SELECT id, title, description, project_id, status, creation_date, update_date
             FROM tickets
@@ -58,27 +62,25 @@ public class TicketRepository {
         List<Object> params = new ArrayList<>();
 
         String cleanedText = text == null ? null : text.trim();
-        String cleanedStatus = status == null ? null : status.trim();
 
         if (cleanedText != null && !cleanedText.isBlank()) {
             sql.append("""
                 AND (
-                    LOWER(title) LIKE LOWER(?)
-                    OR LOWER(COALESCE(description, '')) LIKE LOWER(?)
+                    strpos(LOWER(title), LOWER(?)) > 0
+                    OR strpos(LOWER(COALESCE(description, '')), LOWER(?)) > 0
                 )
                 """);
 
-            String searchText = "%" + cleanedText + "%";
-            params.add(searchText);
-            params.add(searchText);
+            params.add(cleanedText);
+            params.add(cleanedText);
         }
 
-        if (cleanedStatus != null && !cleanedStatus.isBlank()) {
+        if (status != null) {
             sql.append("""
-        AND status = ?::ticket_status
-        """);
+                AND status = ?::ticket_status
+                """);
 
-            params.add(cleanedStatus.toUpperCase());
+            params.add(status.name());
         }
 
         sql.append(" ORDER BY id");
@@ -131,13 +133,16 @@ public class TicketRepository {
 
 
 
-    public void assignUser(Long ticketId, Long userId) {
+    public boolean assignUser(Long ticketId, Long userId) {
         String sql = """
                 INSERT INTO user_ticket (ticket_id, user_id)
                 VALUES (?, ?)
+                ON CONFLICT DO NOTHING
                 """;
 
-        jdbcTemplate.update(sql, ticketId, userId);
+        int rowsAffected = jdbcTemplate.update(sql, ticketId, userId);
+
+        return rowsAffected > 0;
     }
 
     public boolean unassignUser(Long ticketId, Long userId) {
@@ -152,22 +157,31 @@ public class TicketRepository {
         return rowsAffected > 0;
     }
 
-    public boolean assignmentExists(Long ticketId, Long userId) {
+    public Map<Long, List<Long>> findAssignedUserIdsByTicketIds(Collection<Long> ticketIds) {
+        if (ticketIds.isEmpty()) {
+            return Map.of();
+        }
+
+        String placeholders = ticketIds.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(","));
+
         String sql = """
-                SELECT COUNT(*)
+                SELECT ticket_id, user_id
                 FROM user_ticket
-                WHERE ticket_id = ?
-                  AND user_id = ?
-                """;
+                WHERE ticket_id IN (%s)
+                ORDER BY ticket_id, user_id
+                """.formatted(placeholders);
 
-        Integer count = jdbcTemplate.queryForObject(
-                sql,
-                Integer.class,
-                ticketId,
-                userId
-        );
-
-        return count != null && count > 0;
+        return jdbcTemplate.query(sql, rs -> {
+            Map<Long, List<Long>> result = new HashMap<>();
+            while (rs.next()) {
+                long ticketId = rs.getLong("ticket_id");
+                long userId = rs.getLong("user_id");
+                result.computeIfAbsent(ticketId, k -> new ArrayList<>()).add(userId);
+            }
+            return result;
+        }, ticketIds.toArray());
     }
 
     public List<Long> findAssignedUserIds(Long ticketId) {
