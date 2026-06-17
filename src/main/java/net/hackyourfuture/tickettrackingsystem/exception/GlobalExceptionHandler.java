@@ -2,6 +2,8 @@ package net.hackyourfuture.tickettrackingsystem.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import net.hackyourfuture.tickettrackingsystem.dto.response.ErrorResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +12,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -18,6 +21,9 @@ import java.util.Objects;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger logger =
+            LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleResourceNotFoundException(
@@ -83,6 +89,23 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatchException(
+            MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request
+    ) {
+        String message = exception.getCause() instanceof IllegalArgumentException cause
+                ? cause.getMessage()
+                : "Invalid value for parameter '" + exception.getName() + "'";
+
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                message,
+                request.getRequestURI(),
+                null
+        );
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(
             HttpServletRequest request
@@ -97,8 +120,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(
+            DataIntegrityViolationException exception,
             HttpServletRequest request
     ) {
+        logger.warn(
+                "Database constraint violation at {}: {}",
+                request.getRequestURI(),
+                exception.getMostSpecificCause().getMessage()
+        );
+
         return buildErrorResponse(
                 HttpStatus.CONFLICT,
                 "Database constraint violation",
@@ -109,8 +139,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
+            Exception exception,
             HttpServletRequest request
     ) {
+        logger.error(
+                "Unhandled exception at {}",
+                request.getRequestURI(),
+                exception
+        );
+
         return buildErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Something went wrong",

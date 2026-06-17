@@ -9,6 +9,7 @@ import net.hackyourfuture.tickettrackingsystem.exception.ResourceNotFoundExcepti
 import net.hackyourfuture.tickettrackingsystem.model.User;
 import net.hackyourfuture.tickettrackingsystem.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +20,7 @@ public class UserService {
 
     private final UserRepository userRepository;
 
+    @Transactional
     public UserResponse createUser(CreateUserRequest request) {
         if (userRepository.findByEmail(request.email()).isPresent()) {
             throw new DuplicateEmailException(
@@ -34,6 +36,7 @@ public class UserService {
         return toUserResponse(createdUser);
     }
 
+    @Transactional(readOnly = true)
     public List<UserResponse> getAllUsers() {
         return userRepository.findAll()
                 .stream()
@@ -41,6 +44,7 @@ public class UserService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public UserResponse getUserById(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() ->
@@ -50,6 +54,7 @@ public class UserService {
         return toUserResponse(user);
     }
 
+    @Transactional
     public UserResponse updateUser(Long id, UpdateUserRequest request) {
         User existingUser = userRepository.findById(id)
                 .orElseThrow(() ->
@@ -76,6 +81,7 @@ public class UserService {
         return toUserResponse(savedUser);
     }
 
+    @Transactional
     public void deleteUser(Long id) {
         boolean deleted = userRepository.deleteById(id);
 

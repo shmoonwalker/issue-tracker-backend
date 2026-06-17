@@ -8,8 +8,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -47,15 +52,46 @@ public class TicketRepository {
         );
     }
 
-    public List<Ticket> findAll() {
-        String sql = """
-                SELECT id, title, description, project_id, status, creation_date, update_date
-                FROM tickets
-                ORDER BY creation_date DESC
-                """;
+    public List<Ticket> findAll(String text, TicketStatus status) {
+        StringBuilder sql = new StringBuilder("""
+            SELECT id, title, description, project_id, status, creation_date, update_date
+            FROM tickets
+            WHERE 1 = 1
+            """);
 
-        return jdbcTemplate.query(sql, ticketRowMapper);
+        List<Object> params = new ArrayList<>();
+
+        String cleanedText = text == null ? null : text.trim();
+
+        if (cleanedText != null && !cleanedText.isBlank()) {
+            sql.append("""
+                AND (
+                    strpos(LOWER(title), LOWER(?)) > 0
+                    OR strpos(LOWER(COALESCE(description, '')), LOWER(?)) > 0
+                )
+                """);
+
+            params.add(cleanedText);
+            params.add(cleanedText);
+        }
+
+        if (status != null) {
+            sql.append("""
+                AND status = ?::ticket_status
+                """);
+
+            params.add(status.name());
+        }
+
+        sql.append(" ORDER BY id");
+
+        return jdbcTemplate.query(
+                sql.toString(),
+                ticketRowMapper,
+                params.toArray()
+        );
     }
+
 
     public Optional<Ticket> findById(Long id) {
         String sql = """
@@ -95,21 +131,18 @@ public class TicketRepository {
         );
     }
 
-    public boolean deleteById(Long id) {
-        String sql = "DELETE FROM tickets WHERE id = ?";
 
-        int rowsAffected = jdbcTemplate.update(sql, id);
 
-        return rowsAffected > 0;
-    }
-
-    public void assignUser(Long ticketId, Long userId) {
+    public boolean assignUser(Long ticketId, Long userId) {
         String sql = """
                 INSERT INTO user_ticket (ticket_id, user_id)
                 VALUES (?, ?)
+                ON CONFLICT DO NOTHING
                 """;
 
-        jdbcTemplate.update(sql, ticketId, userId);
+        int rowsAffected = jdbcTemplate.update(sql, ticketId, userId);
+
+        return rowsAffected > 0;
     }
 
     public boolean unassignUser(Long ticketId, Long userId) {
@@ -124,22 +157,31 @@ public class TicketRepository {
         return rowsAffected > 0;
     }
 
-    public boolean assignmentExists(Long ticketId, Long userId) {
+    public Map<Long, List<Long>> findAssignedUserIdsByTicketIds(Collection<Long> ticketIds) {
+        if (ticketIds.isEmpty()) {
+            return Map.of();
+        }
+
+        String placeholders = ticketIds.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(","));
+
         String sql = """
-                SELECT COUNT(*)
+                SELECT ticket_id, user_id
                 FROM user_ticket
-                WHERE ticket_id = ?
-                  AND user_id = ?
-                """;
+                WHERE ticket_id IN (%s)
+                ORDER BY ticket_id, user_id
+                """.formatted(placeholders);
 
-        Integer count = jdbcTemplate.queryForObject(
-                sql,
-                Integer.class,
-                ticketId,
-                userId
-        );
-
-        return count != null && count > 0;
+        return jdbcTemplate.query(sql, rs -> {
+            Map<Long, List<Long>> result = new HashMap<>();
+            while (rs.next()) {
+                long ticketId = rs.getLong("ticket_id");
+                long userId = rs.getLong("user_id");
+                result.computeIfAbsent(ticketId, k -> new ArrayList<>()).add(userId);
+            }
+            return result;
+        }, ticketIds.toArray());
     }
 
     public List<Long> findAssignedUserIds(Long ticketId) {
@@ -151,5 +193,20 @@ public class TicketRepository {
                 """;
 
         return jdbcTemplate.queryForList(sql, Long.class, ticketId);
+    }
+
+    public List<String> findAssigneeEmailsByTicketId(Long ticketId) {
+        String sql = """
+            SELECT u.email
+            FROM users u
+            JOIN user_ticket ut ON ut.user_id = u.id
+            WHERE ut.ticket_id = ?
+            """;
+
+        return jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> rs.getString("email"),
+                ticketId
+        );
     }
 }
