@@ -7,12 +7,11 @@ import lombok.RequiredArgsConstructor;
 import java.util.Arrays;
 
 @RequiredArgsConstructor
-public enum TicketStatus {
-    BACKLOG("backlog"),
-    TODO("todo"),
-    IN_PROGRESS("in progress"),
-    IN_REVIEW("in review"),
-    DONE("done");
+public enum TicketPriority {
+    LOW("low"),
+    MEDIUM("medium"),
+    HIGH("high"),
+    URGENT("urgent");
 
     private final String value;
 
@@ -22,7 +21,7 @@ public enum TicketStatus {
     }
 
     @JsonCreator
-    public static TicketStatus fromValue(String input) {
+    public static TicketPriority fromValue(String input) {
         if (input == null) {
             return null;
         }
@@ -33,13 +32,13 @@ public enum TicketStatus {
                 .replace(" ", "_");
 
         return Arrays.stream(values())
-                .filter(status ->
-                        status.value.equals(normalized)
-                                || status.name().equalsIgnoreCase(enumStyle)
+                .filter(priority ->
+                        priority.value.equals(normalized)
+                                || priority.name().equalsIgnoreCase(enumStyle)
                 )
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "Unknown status: \"" + input + "\". Allowed: backlog, todo, in progress, in review, done"
+                        "Unknown priority: \"" + input + "\". Allowed: low, medium, high, urgent"
                 ));
     }
 }
