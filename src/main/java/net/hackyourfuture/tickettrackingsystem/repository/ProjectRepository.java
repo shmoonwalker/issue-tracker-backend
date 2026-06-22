@@ -1,7 +1,7 @@
 package net.hackyourfuture.tickettrackingsystem.repository;
 
 import lombok.RequiredArgsConstructor;
-import net.hackyourfuture.tickettrackingsystem.dto.response.ProjectSummaryResponse;
+import net.hackyourfuture.tickettrackingsystem.model.Project;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -11,38 +11,44 @@ import java.util.List;
 @Repository
 @RequiredArgsConstructor
 public class ProjectRepository {
+
     private final JdbcTemplate jdbcTemplate;
 
-    public List<ProjectSummaryResponse> findAllProjectSummaries(){
-        String sql = """
-                SELECT
-                p.id,
-                p.name,
-                COUNT(*) FILTER (WHERE t.status = 'OPEN') AS open_tickets,
-                COUNT(*) FILTER (WHERE t.status = 'IN_PROGRESS') AS in_progress_tickets,
-                COUNT(*) FILTER (WHERE t.status = 'CLOSED') AS closed_tickets
-                FROM projects p
-                LEFT JOIN tickets t ON p.id = t.project_id
-                GROUP BY p.id, p.name
-                ORDER BY p.name
-                """;
-        return jdbcTemplate.query(sql, projectSummaryResponseRowMapper);
-    }
-
-    private final RowMapper<ProjectSummaryResponse> projectSummaryResponseRowMapper =
-            (rs, rowNum) -> new ProjectSummaryResponse(
+    private final RowMapper<Project> projectRowMapper = (rs, rowNum) ->
+            new Project(
                     rs.getLong("id"),
+                    rs.getLong("workspace_id"),
                     rs.getString("name"),
-                    rs.getInt("open_tickets"),
-                    rs.getInt("in_progress_tickets"),
-                    rs.getInt("closed_tickets")
+                    rs.getString("description"),
+                    rs.getLong("created_by_user_id")
             );
 
-    public boolean existsById(Long id) {
-        String sql = "SELECT COUNT(*) FROM projects WHERE id = ?";
+    public Project create(Project project) {
+        String sql = """
+                INSERT INTO projects (workspace_id, name, description, created_by_user_id)
+                VALUES (?, trim(?), ?, ?)
+                RETURNING id, workspace_id, name, description, created_by_user_id
+                """;
 
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, id);
+        return jdbcTemplate.queryForObject(
+                sql,
+                projectRowMapper,
+                project.workspaceId(),
+                project.name(),
+                project.description(),
+                project.createdByUserId()
+        );
+    }
 
-        return count != null && count > 0;
+    public List<Project> findByWorkspaceId(Long workspaceId) {
+        String sql = """
+                SELECT id, workspace_id, name, description, created_by_user_id
+                FROM projects
+                WHERE workspace_id = ?
+                  AND archived_at IS NULL
+                ORDER BY id
+                """;
+
+        return jdbcTemplate.query(sql, projectRowMapper, workspaceId);
     }
 }
