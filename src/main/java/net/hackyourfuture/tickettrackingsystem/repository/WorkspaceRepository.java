@@ -59,4 +59,18 @@ public class WorkspaceRepository {
         return jdbcTemplate.query(sql, workspaceRowMapper, userId);
     }
 
+    public boolean isMember(Long workspaceId, Long userId) {
+        String sql = """
+            SELECT COUNT(*) > 0
+            FROM workspace_members
+            WHERE workspace_id = ?
+              AND user_id = ?
+            """;
+
+
+        Boolean isMember = jdbcTemplate.queryForObject(sql, Boolean.class, workspaceId, userId);
+        return Boolean.TRUE.equals(isMember);
+    }
+
+
 }
