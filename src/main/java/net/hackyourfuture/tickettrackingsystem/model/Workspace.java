@@ -1,8 +1,8 @@
 package net.hackyourfuture.tickettrackingsystem.model;
 
-public record User(
+public record Workspace(
         Long id,
         String name,
-        String email,
-        String passwordHash) {
+        Long createdByUserId
+) {
 }

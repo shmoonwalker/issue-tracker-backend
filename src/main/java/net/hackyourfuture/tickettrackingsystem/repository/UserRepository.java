@@ -20,12 +20,13 @@ public class UserRepository {
             new User(
                     rs.getLong("id"),
                     rs.getString("name"),
-                    rs.getString("email")
+                    rs.getString("email"),
+                    rs.getString("password_hash")
             );
 
     public List<User> findAll() {
         String sql = """
-                SELECT id, name, email
+                SELECT id, name, email, password_hash
                 FROM users
                 ORDER BY id
                 """;
@@ -35,7 +36,7 @@ public class UserRepository {
 
     public Optional<User> findById(Long id) {
         String sql = """
-                SELECT id, name, email
+                SELECT id, name, email, password_hash
                 FROM users
                 WHERE id = ?
                 """;
@@ -50,9 +51,9 @@ public class UserRepository {
 
     public Optional<User> findByEmail(String email) {
         String sql = """
-                SELECT id, name, email
+                SELECT id, name, email, password_hash
                 FROM users
-                WHERE email = ?
+                WHERE lower(trim(email)) = lower(trim(?))
                 """;
 
         try {
@@ -65,26 +66,29 @@ public class UserRepository {
 
     public User create(User user) {
         String sql = """
-                INSERT INTO users (name, email)
-                VALUES (?, ?)
-                RETURNING id, name, email
-                """;
+            INSERT INTO users (name, email, password_hash)
+            VALUES (trim(?), lower(trim(?)), ?)
+            RETURNING id, name, email, password_hash
+            """;
 
         return jdbcTemplate.queryForObject(
                 sql,
                 userRowMapper,
                 user.name(),
-                user.email()
+                user.email(),
+                user.passwordHash()
         );
     }
 
     public User update(User user) {
         String sql = """
-                UPDATE users
-                SET name = ?, email = ?
-                WHERE id = ?
-                RETURNING id, name, email
-                """;
+            UPDATE users
+            SET name = trim(?),
+                email = lower(trim(?)),
+                updated_at = current_timestamp
+            WHERE id = ?
+            RETURNING id, name, email, password_hash
+            """;
 
         return jdbcTemplate.queryForObject(
                 sql,
@@ -95,11 +99,17 @@ public class UserRepository {
         );
     }
 
-    public boolean deleteById(Long id) {
-        String sql = "DELETE FROM users WHERE id = ?";
+    public boolean existsByEmail(String email) {
+        String sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM users
+                WHERE lower(trim(email)) = lower(trim(?))
+            )
+            """;
 
-        int rowsAffected = jdbcTemplate.update(sql, id);
-
-        return rowsAffected > 0;
+        Boolean exists = jdbcTemplate.queryForObject(sql, Boolean.class, email);
+        return Boolean.TRUE.equals(exists);
     }
+
 }

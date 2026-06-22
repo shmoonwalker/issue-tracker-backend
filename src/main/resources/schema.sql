@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS workspace_members;
 DROP TABLE IF EXISTS workspaces;
 DROP TABLE IF EXISTS users;
 
+
 DROP TYPE IF EXISTS ticket_priority;
 DROP TYPE IF EXISTS ticket_status;
 DROP TYPE IF EXISTS member_role;
